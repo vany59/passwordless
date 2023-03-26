@@ -1,0 +1,177 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Amazon Cognito User Pool with Passwordless E-Mail Auth configured
+
+  '
+Globals:
+  Function:
+    Timeout: 30
+Parameters:
+  UserPoolName:
+    Type: String
+    Description: The name you want the User Pool to be created with
+    Default: UsingExistingDatabaseWithAWSCognito
+  DbConnectionString:
+    Type: String
+    Description: The e-mail address to send the secret login code from
+    Default: mongodb+srv://dev:RO0KZKcH62Oq5Uao@cluster0.jqcuqcp.mongodb.net/passwordless
+Resources:
+  DefineAuthChallenge:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://passwordless-25032023/8042dc858670569005a12c9603f68e4c
+      Handler: define-auth-challenge.handler
+      Runtime: nodejs18.x
+    Metadata:
+      SamResourceId: DefineAuthChallenge
+  CreateAuthChallenge:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://passwordless-25032023/19498fe9f8cc4400f54b96a6cca47a6f
+      Handler: create-auth-challenge.handler
+      Runtime: nodejs18.x
+      Environment:
+        Variables:
+          DB_CONNECTION_STRING:
+            Ref: DbConnectionString
+    Metadata:
+      SamResourceId: CreateAuthChallenge
+  VerifyAuthChallengeResponse:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://passwordless-25032023/9658735ec33bc672854492baaad82aec
+      Handler: verify-auth-challenge-response.handler
+      Runtime: nodejs18.x
+    Metadata:
+      SamResourceId: VerifyAuthChallengeResponse
+  PreSignUp:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://passwordless-25032023/3b0b6d426f7b2846b167acbbb0710c01
+      Handler: pre-sign-up.handler
+      Runtime: nodejs18.x
+    Metadata:
+      SamResourceId: PreSignUp
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName:
+        Ref: UserPoolName
+      Schema:
+      - Name: name
+        AttributeDataType: String
+        Mutable: true
+        Required: false
+      - Name: email
+        AttributeDataType: String
+        Mutable: true
+        Required: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+      UsernameAttributes:
+      - email
+      MfaConfiguration: 'OFF'
+      LambdaConfig:
+        CreateAuthChallenge:
+          Fn::GetAtt:
+          - CreateAuthChallenge
+          - Arn
+        DefineAuthChallenge:
+          Fn::GetAtt:
+          - DefineAuthChallenge
+          - Arn
+        PreSignUp:
+          Fn::GetAtt:
+          - PreSignUp
+          - Arn
+        VerifyAuthChallengeResponse:
+          Fn::GetAtt:
+          - VerifyAuthChallengeResponse
+          - Arn
+    Metadata:
+      SamResourceId: UserPool
+  DefineAuthChallengeInvocationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - DefineAuthChallenge
+        - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - UserPool
+        - Arn
+    Metadata:
+      SamResourceId: DefineAuthChallengeInvocationPermission
+  CreateAuthChallengeInvocationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - CreateAuthChallenge
+        - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - UserPool
+        - Arn
+    Metadata:
+      SamResourceId: CreateAuthChallengeInvocationPermission
+  VerifyAuthChallengeResponseInvocationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - VerifyAuthChallengeResponse
+        - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - UserPool
+        - Arn
+    Metadata:
+      SamResourceId: VerifyAuthChallengeResponseInvocationPermission
+  PreSignUpInvocationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - PreSignUp
+        - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - UserPool
+        - Arn
+    Metadata:
+      SamResourceId: PreSignUpInvocationPermission
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: auth-with-existing-db
+      GenerateSecret: false
+      UserPoolId:
+        Ref: UserPool
+      ExplicitAuthFlows:
+      - CUSTOM_AUTH_FLOW_ONLY
+    Metadata:
+      SamResourceId: UserPoolClient
+Outputs:
+  UserPoolId:
+    Description: ID of the User Pool
+    Value:
+      Ref: UserPool
+  UserPoolClientId:
+    Description: ID of the User Pool Client
+    Value:
+      Ref: UserPoolClient
